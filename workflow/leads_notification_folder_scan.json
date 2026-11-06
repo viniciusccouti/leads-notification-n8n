@@ -1,0 +1,229 @@
+{
+  "name": "Leads Notification - Folder Scan",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst leads = staticData.pendingLeads || [];\n\nstaticData.pendingLeads = [];\n\nif (leads.length === 0) {\n  return [];\n}\n\nconst listHtml = leads.map(lead => {\n  return `<li><b>${lead.video}</b>: ${lead.Nome}, ${lead.Email}, filled at ${lead['Horário de Preenchimento']}</li>`;\n}).join('');\n\nreturn [{ json: { emailBody: `<ul>${listHtml}</ul>`, count: leads.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        1296
+      ],
+      "id": "8c13910b-c837-4695-8b7e-b933cb9c3851",
+      "name": "Build summary email"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1408,
+        1104
+      ],
+      "id": "4b0ae7c4-6a55-48a4-998c-d1c87a308e11",
+      "name": "Every day at 9am"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+            "mode": "list",
+            "cachedResultName": "Leads Sheets"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1184,
+        1104
+      ],
+      "id": "690c3b43-a0e2-448b-be2e-e37053d0b913",
+      "name": "List files in Leads Sheets",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -960,
+        1104
+      ],
+      "id": "c575e345-ba24-4891-9129-289ea4b4c442",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -720,
+        992
+      ],
+      "id": "b0269278-a01e-4064-a889-75c6fe9f1c0a",
+      "name": "Read leads",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst fileId = $('Loop Over Items').item.json.id;\nconst videoName = $('Loop Over Items').item.json.name;\n\nlet rows = $input.all().map(item => item.json);\nrows = rows.filter(row => row.Nome !== undefined || row.Email !== undefined);\n\nconst lastCount = staticData[fileId] || 0;\nconst currentCount = rows.length;\n\nstaticData[fileId] = currentCount;\n\nif (!staticData.pendingLeads) {\n  staticData.pendingLeads = [];\n}\n\nif (currentCount > lastCount) {\n  const newRows = rows.slice(lastCount);\n  for (const row of newRows) {\n    staticData.pendingLeads.push({ ...row, video: videoName });\n  }\n}\n\nreturn [{ json: { fileId, checked: true } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        992
+      ],
+      "id": "72990df4-64fe-4752-934a-4ee855809dfd",
+      "name": "Check for new rows"
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_EMAIL@example.com",
+        "subject": "=New leads today: {{ $json.count }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -720,
+        1296
+      ],
+      "id": "35579683-4050-432f-b515-6ab71422a732",
+      "name": "Send Email",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Build summary email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every day at 9am": {
+      "main": [
+        [
+          {
+            "node": "List files in Leads Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List files in Leads Sheets": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Build summary email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read leads": {
+      "main": [
+        [
+          {
+            "node": "Check for new rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for new rows": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
